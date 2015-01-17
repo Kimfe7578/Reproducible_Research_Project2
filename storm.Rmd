@@ -1,0 +1,176 @@
+## Top Weather Events Affecting Population and Economy Between 1989 and 2011
+ 
+ 
+### Synopsis
+The purpose of this analysis is to determine the weather events that had the greatest impact on population health and the economy between 1989 and 2011.  The analysis leverages data from the NOAA Storm Database which tracks severe weather events in the Unites States.  The events in the database start in January 1950 and end in November 2011.  However, due to the small number of events recorded in earlier years, only data from 1989 to 2011 are used in the analysis.  From these data, we discover that the top 3 weather events affecting population health are Tornado, Storm and Heat, accounting for 66% of fatalities and injuries in the United States between 1989 and 2011.  During the same timeframe, the top 3 weather events that resulted in the greatest economic consequences are Flood, Storm and Tornado, accounting for 82% of property and crop damage.
+ 
+ 
+### Data Processing
+From the [NOAA Storm Database](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2), we obtain data on weather events occurring in the United States.  The data come in the form of a comma-separated-value file compressed via the bzip2 algorithm.  We uncompress this file and load all of its contents in to R.
+ 
+``` {r loaddata, echo=TRUE, cache=TRUE}
+storm <- read.table(bzfile("repdata-data-StormData.csv.bz2"),
+                    sep=",", header=TRUE, stringsAsFactors=FALSE)
+```
+ 
+We explore the data structure as well as the first few observations to gain an understanding of the data.
+ 
+``` {r explore, echo=TRUE, cache=TRUE}
+str(storm)
+head(storm)
+orig_n <- nrow(storm)
+orig_n
+```
+ 
+In order to determine how much of the data we will use for the analysis, we convert "BGN_DATE" from character to a date datatype and look at the number of weather events entered by year.  We then examine what percentage of the total events from 1950 to 2011 each year accounts for.
+ 
+``` {r evdate, echo=TRUE, cache=TRUE}
+storm$EVDATE <- as.Date(storm$BGN_DATE, "%m/%d/%Y")
+ev_by_yr     <- aggregate(EVTYPE~format(EVDATE, "%Y"), data=storm, length)
+ev_by_yr$PCT <- ev_by_yr$EVTYPE/sum(ev_by_yr$EVTYPE)*100
+ev_by_yr
+```
+ 
+From the output, we see that years 1950 to 1988 each account for less than 1% of the total events in the database.  For this analysis, we will only use data for those years which account for at least 1% of the total events in the database.  In this case, these are years 1989 to 2011.
+ 
+``` {r subyr, echo=TRUE, cache=TRUE}
+storm2 <- subset(storm, format(EVDATE, "%Y") > "1988" )
+n1 <- nrow(storm2)
+n1
+```
+ 
+We see that we have reduced the number of observations from `r orig_n` to `r n1`.
+ 
+Next we explore the EVTYPE variable and discover that there are 985 different event types recorded in the database. For the sake of saving space on this report, we show only the first 20 event types.
+ 
+``` {r evtype, echo=TRUE, cache=TRUE}
+# number of unique events
+length(unique(storm2$EVTYPE))
+# display top 20 events
+head(unique(storm2$EVTYPE),20)
+```
+ 
+As can be seen, the 985 EVTYPEs are not unique event types.  For example, hurricane can appear as HURRICANE OPAL/HIGH WINDS, HURRICANE ERIN and HURRICANE OPAL. Due to this, we have decided to group event types into 14 categories. 
+ 
+``` {r evcat, echo=TRUE, cache=TRUE}
+storm2$EVCAT <- ifelse(grepl("TORN|SPOUT|WALL", storm2$EVTYPE, ignore.case=TRUE), "TORNADO",
+               ifelse(grepl("THU|TSTM|TUN|FUNNEL|STORM|TROP|TSUN|TYPH|COASTAL", storm2$EVTYPE, ignore.case=TRUE),"STORM",
+               ifelse(grepl("HURR", storm2$EVTYPE, ignore.case=TRUE), "HURRICANE",
+               ifelse(grepl("FIRE|SMOKE", storm2$EVTYPE, ignore.case=TRUE), "WILDFIRE",
+               ifelse(grepl("CURR|TIDE|SURF|ROGUE|RISING|WAVES", storm2$EVTYPE, ignore.case=TRUE), "TIDES",
+               ifelse(grepl("LIGHTNING|LIGN|LIGHTING", storm2$EVTYPE, ignore.case=TRUE), "LIGHTNING",
+               ifelse(grepl("HEAT|WARM|DROUGHT|HIGH TEMP|RECORD HIGH|HOT|DRIEST", storm2$EVTYPE, ignore.case=TRUE), "HEAT",
+               ifelse(grepl("COLD|FREEZ|CHILL|FROST|WINT|ICE|ICY|SNOW|SLEET|BLIZZ|GLAZE|LOW TEMP|RECORD LOW|DRY",
+                            storm2$EVTYPE, ignore.case=TRUE), "COLD",
+               ifelse(grepl("FLOOD|HIGH WATER|FLD|LAND|MUD|FLOOOD|FLOYD", storm2$EVTYPE, ignore.case=TRUE), "FLOOD",
+               ifelse(grepl("HAIL", storm2$EVTYPE, ignore.case=TRUE), "HAIL",
+               ifelse(grepl("RAIN|PRECIP|SHOWER|WET", storm2$EVTYPE, ignore.case=TRUE), "RAIN",
+               ifelse(grepl("WIND|BURST|WND", storm2$EVTYPE, ignore.case=TRUE), "WIND",
+               ifelse(grepl("DUST", storm2$EVTYPE, ignore.case=TRUE), "DUST", "OTHER")))))))))))))
+ 
+table(storm2$EVCAT)
+```
+ 
+As can be seen above, the rules ensure that multiple EVTYPEs that represent the same event are grouped in the same category. The categories themselves are chosen after examining the data and are believed to be a good representation of the different classes of weather events.  It must be noted that the category "OTHER" includes all other event types that do not fall under the 13 categories created.  No further cleansing is applied to this category as the total number of records is relatively small.
+ 
+To determine the impact of events on population health and economy, we look at the following variables: FATALITIES, INJURIES, PROPDMG and CROPDMG.  Since only the events that had an impact on any of these factors are of interest to us, we subset the data to only include records with non-zero values in at least one of these variables.
+ 
+``` {r vars, echo=TRUE}
+s <- subset(storm2, FATALITIES>0 | INJURIES>0 | PROPDMG>0 | CROPDMG>0)
+n2 <- nrow(s)
+n2
+```
+ 
+We see that we have reduced the number of observations from `r n1` to `r n2`.
+ 
+Examining the data, we see two other fields that are related PROPDMG and CROPDMG, namely, PROPDMGEXP and CROPDMGEXP. 
+ 
+``` {r exp, echo=TRUE}
+unique(s$PROPDMGEXP)
+unique(s$CROPDMGEXP)
+```
+ 
+Due to the absence of a code book for the storm data, we need to make assumptions on the meaning of these two variables.  Here we assume that PROPDMG and CROPDMG represent dollar amounts, and PROPDMGEXP and CROPDMGEXP represent the multipliers for these dollar amounts. From the output above, we make the following assumptions:
+ 
+- H/h = hundred
+- K/k = thousand
+- M/m = million
+- B = billion
+ 
+We now look at how to handle the other values of PROPDMGEXP and CROPDMGEXP. 
+ 
+``` {r expchk, echo=TRUE}
+numrecs <- nrow(subset(s, !(s$PROPDMGEXP %in% c("H","h","K","k","M","m","B")) &
+                          !(s$CROPDMGEXP %in% c("H","h","K","k","M","m","B"))))
+numrecs
+pct_affected <- paste(format(numrecs/nrow(s)*100, digits=3),"%",sep="")
+pct_affected
+```
+ 
+From above, we see that only `r numrecs` observations have multiplier values that are not part of the values in our assumption.  As this only affects `r pct_affected` of our data, we make the decision to interpret these multiplier values as 0.
+ 
+With these assumptions, we create new fields representing PROPDMG and CROPDMG amounts.
+In addition, we create a new field representing total FATALITIES and INJURIES.
+ 
+``` {r mult, echo=TRUE}
+s$PROPDMGAMT <- ifelse(s$PROPDMGEXP %in% c("H","h"), s$PROPDMG*100,
+                ifelse(s$PROPDMGEXP %in% c("K","k"), s$PROPDMG*1000,
+                ifelse(s$PROPDMGEXP %in% c("M","m"), s$PROPDMG*1000000,
+                ifelse(s$PROPDMGEXP=="B", s$PROPDMG*1000000000,0))))
+ 
+s$CROPDMGAMT <- ifelse(s$CROPDMGEXP %in% c("H","h"), s$CROPDMG*100,
+                ifelse(s$CROPDMGEXP %in% c("K","k"), s$CROPDMG*1000,
+                ifelse(s$CROPDMGEXP %in% c("M","m"), s$CROPDMG*1000000,
+                ifelse(s$CROPDMGEXP=="B", s$CROPDMG*1000000000,0))))
+ 
+s$TOTALDMGAMT <- s$PROPDMGAMT + s$CROPDMGAMT
+ 
+s$TOTALDMGPOP <- s$FATALITIES + s$INJURIES
+```
+ 
+ 
+ 
+### Results
+#### Across the United States, which types of events are most harmful with respect to population health?
+ 
+``` {r pop, echo=TRUE}
+ 
+# compute total number of fatalities and injuries for each event category
+p <- aggregate(TOTALDMGPOP~EVCAT, data=s, sum)
+p$PCTDMGPOP <- p$TOTALDMGPOP/sum(p$TOTALDMGPOP) * 100
+p2 <- p[order(-p$TOTALDMGPOP),]
+ 
+# plot results
+par(mar=c(10,6,4,4))
+barplot(p2$TOTALDMGPOP, names = p2$EVCAT,
+      main="Total Fatalities and Injuries by Event Category",
+      ylim=c(0,35000), col='red',las=2, cex.names=0.7, cex.axis=0.7, cex.lab=1)
+mtext(side = 1, text = "Event Category", line = 5, cex=0.9)
+mtext(side = 2, text = "Number of Fatalities and Injuries", line = 4, cex=0.9)
+mtext(side = 1, text = "Figure 1: Impact of weather events on population fatalities and injuries", line = 8, cex=0.8)
+box()
+```
+ 
+This plot shows that the most harmful event to population health is Tornado, accounting for 34.5% (29,867) of fatalities and injuries in the United States between 1989 and 2011. This is followed by Storm and Heat, accounting for 17.0% (14,733) and 14.4% (12,420) of fatalities and injuries in this timeframe, respectively.
+ 
+#### Across the United States, which types of events have the greatest economic consequences?
+ 
+``` {r eco, echo=TRUE}
+ 
+# compute total damage amount by event category
+e <- aggregate(TOTALDMGAMT~EVCAT, data=s, sum)
+e$PCT <- e$TOTALDMGAMT/sum(e$TOTALDMGAMT) * 100
+e2 <- e[order(-e$TOTALDMGAMT),]
+ 
+# plot results
+par(mar=c(10,6,4,4))
+barplot(e2$TOTALDMGAMT/1000000000, names = e2$EVCAT,
+      main="Total Property and Crop Damage by Event Category",
+      ylim=c(0,200), col='red',las=2, cex.names=0.7, cex.axis=0.7, cex.lab=1)
+mtext(side = 1, text = "Event Category", line = 5, cex=0.9)
+mtext(side = 2, text = "Total Damage (in billion dollars)", line = 3, cex=0.9)
+mtext(side = 1, text = "Figure 2: Monetary impact of property and crop damage caused by weather events", line = 8, cex=0.8)
+box()
+```
+ 
+The plot shows that the most harmful event in terms of economic consequences is Flood, accounting for 39.8% ($180B) of property and crop damage in the United States between 1989 and 2011.  This is followed by Storm and Tornado, accounting for 34.9% ($158B) and 7.6% ($34B) of damages in this timeframe, respectively.
